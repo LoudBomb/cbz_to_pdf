@@ -1,1 +1,18 @@
-pdf_output
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python/
+env/
+venv/
+lib/
+include/
+bin/
+share/
+
+# Specific to this project
+pdf_output/
+*.log
+*.tmp
+.DS_Store

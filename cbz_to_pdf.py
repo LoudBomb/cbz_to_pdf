@@ -6,6 +6,61 @@ from pathlib import Path
 import tempfile
 from PIL import Image
 
+def convert_single_cbz_to_pdf(cbz_path, output_dir):
+    """
+    Converts a single .cbz file to a .pdf file.
+
+    Args:
+        cbz_path (str): The path to the .cbz file.
+        output_dir (str): The path to the directory where the .pdf file will be saved.
+    """
+    cbz_path = Path(cbz_path)
+    pdf_filename = cbz_path.stem + '.pdf'
+    pdf_path = Path(output_dir) / pdf_filename
+
+    print(f"Processing '{cbz_path.name}'...")
+
+    with tempfile.TemporaryDirectory() as temp_dir:
+        try:
+            with zipfile.ZipFile(cbz_path, 'r') as zip_ref:
+                zip_ref.extractall(temp_dir)
+        except zipfile.BadZipFile:
+            print(f"  Warning: '{cbz_path.name}' is not a valid zip file. Skipping.")
+            return
+
+        image_extensions = ['.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp']
+        image_files = []
+        for root, _, files in os.walk(temp_dir):
+            for f in sorted(files):
+                if Path(f).suffix.lower() in image_extensions:
+                    image_files.append(Path(root) / f)
+
+        if not image_files:
+            print(f"  No images found in '{cbz_path.name}'. Skipping.")
+            return
+
+        images = []
+        for image_file in image_files:
+            try:
+                with Image.open(image_file) as img:
+                    if img.mode != 'RGB':
+                        img = img.convert('RGB')
+                    images.append(img.copy())
+            except Exception as e:
+                print(f"  Warning: Could not open or convert '{image_file.name}'. Skipping this file. Error: {e}")
+
+        if images:
+            images[0].save(
+                pdf_path,
+                "PDF",
+                resolution=100.0,
+                save_all=True,
+                append_images=images[1:]
+            )
+            print(f"  Successfully converted to '{pdf_path.name}'")
+        else:
+            print(f"  No valid images could be processed in '{cbz_path.name}'.")
+
 def convert_cbz_to_pdfs(input_dir, output_dir):
     """
     Converts all .cbz files in the input directory to individual .pdf files in the output directory.
@@ -22,55 +77,11 @@ def convert_cbz_to_pdfs(input_dir, output_dir):
     print(f"Input directory: {Path(input_dir).resolve()}")
     print(f"Output directory: {Path(output_dir).resolve()}")
 
-    image_extensions = ['.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp']
-
     for filename in sorted(os.listdir(input_dir)):
         if filename.lower().endswith('.cbz'):
             cbz_path = Path(input_dir) / filename
-            pdf_filename = Path(filename).stem + '.pdf'
-            pdf_path = Path(output_dir) / pdf_filename
+            convert_single_cbz_to_pdf(cbz_path, output_dir)
 
-            print(f"Processing '{filename}'...")
-
-            with tempfile.TemporaryDirectory() as temp_dir:
-                try:
-                    with zipfile.ZipFile(cbz_path, 'r') as zip_ref:
-                        zip_ref.extractall(temp_dir)
-                except zipfile.BadZipFile:
-                    print(f"  Warning: '{filename}' is not a valid zip file. Skipping.")
-                    continue
-                
-                image_files = []
-                for root, _, files in os.walk(temp_dir):
-                    for f in sorted(files):
-                        if Path(f).suffix.lower() in image_extensions:
-                            image_files.append(Path(root) / f)
-                
-                if not image_files:
-                    print(f"  No images found in '{filename}'. Skipping.")
-                    continue
-
-                images = []
-                for image_file in image_files:
-                    try:
-                        with Image.open(image_file) as img:
-                            if img.mode != 'RGB':
-                                img = img.convert('RGB')
-                            images.append(img.copy())
-                    except Exception as e:
-                        print(f"  Warning: Could not open or convert '{image_file.name}'. Skipping this file. Error: {e}")
-
-                if images:
-                    images[0].save(
-                        pdf_path, 
-                        "PDF", 
-                        resolution=100.0, 
-                        save_all=True, 
-                        append_images=images[1:]
-                    )
-                    print(f"  Successfully converted to '{pdf_path.name}'")
-                else:
-                    print(f"  No valid images could be processed in '{filename}'.")
 
 def combine_cbz_to_pdf(input_files, output_file):
     """
@@ -87,6 +98,8 @@ def combine_cbz_to_pdf(input_files, output_file):
 
     image_extensions = ['.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp']
     all_images = []
+    
+    files_processed = 0
 
     for cbz_file in sorted(input_files):
         cbz_path = Path(cbz_file)
@@ -116,6 +129,10 @@ def combine_cbz_to_pdf(input_files, output_file):
                         print(f"  Warning: Could not open or convert '{image_file.name}'. Skipping. Error: {e}")
             except zipfile.BadZipFile:
                 print(f"  Warning: '{cbz_path.name}' is not a valid zip file. Skipping.")
+        
+        files_processed += 1
+        yield files_processed
+
 
     if all_images:
         print(f"Saving combined PDF to '{output_path.resolve()}'...")
@@ -141,7 +158,11 @@ if __name__ == '__main__':
     if args.combine:
         if not args.output:
             parser.error("--output is required when using --combine")
-        combine_cbz_to_pdf(args.input_paths, args.output)
+        
+        # We need to consume the generator for the combine function to execute
+        for _ in combine_cbz_to_pdf(args.input_paths, args.output):
+            pass
+
     else:
         if len(args.input_paths) > 1:
             parser.error("Only a single input directory is allowed when not using --combine.")
